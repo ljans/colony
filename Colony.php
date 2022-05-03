@@ -1,6 +1,6 @@
 <?php
 /*!
- * Colony PHP template processor v1.0
+ * Colony PHP template engine v1.0
  * Licensed under the MIT license
  * Copyright (c) 2022-05 Lukas Jans
  * https://github.com/ljans/colony
@@ -268,7 +268,7 @@ class Colony {
 	// Format data. Returns NULL if the data is not applicable. The attribute or text content won't be set then
 	private function format($data, $format) {
 		if(is_object($data)) return $data->format($format); // Mostly DateTime
-		if(is_array($data)) return sprintf($format, ...$data); // Multiple placeholders
+		if(is_array($data)) return vsprintf($format, $data); // Multiple placeholders
 		if(is_scalar($data)) return sprintf($format, $data); // Single placeholder
 	}
 	
