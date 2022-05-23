@@ -1,18 +1,26 @@
 <?php
 /*!
- * Colony PHP template engine v1.0
+ * Colony HTML template engine v1.1
  * Licensed under the MIT license
  * Copyright (c) 2022-05 Lukas Jans
  * https://github.com/ljans/colony
  */
 class Colony {
+	
+	// Constants for labelling the attributes of a feature (must be string for array_merge to work)
+	const EXPRESSION = 'expression';
+	const EARLY = 'earlyAssignmentSelectorPrefix';
+	const LATE = 'lateAssignmentSelectorPrefix';
 
 	// Array for expressions from ini file
 	private $expressions = [];
 	
 	// Default configuration
 	private $defaultConfig = [
-		'textAttribute' => 'text',
+		self::LATE => ':',
+		self::EARLY => '.',
+		'textSelector' => 'text',
+		'nestingDelimiter' => '/',
 		'templateFolder' => 'templates',
 	];
 	
@@ -23,7 +31,7 @@ class Colony {
 	}
 	
 	// Load an expression file
-	public function loadExpressionsFile($path) {
+	public function loadExpressionFile($path) {
 		
 		// Array of key-value pairs or sections of those or a mix
 		$entriesOrSections = parse_ini_file($path, true);
@@ -54,11 +62,11 @@ class Colony {
 	// Find a property in a nested data-object by a selector
 	private function findProperty($selector, $globalData, $localData) {
 		
-		// Return the local data if the selector is empty (attribute without value)
+		// Return the local data if the selector is empty (attribute had value)
 		if($selector === '') return $localData;
 		
 		// Split the selector in segments by the delimiter
-		$segments = explode('/', $selector);
+		$segments = explode($this->config['nestingDelimiter'], $selector);
 		
 		// Decide, whether the selector is local or global (=starts with delimiter)
 		if($segments[0] === '') {
@@ -69,13 +77,13 @@ class Colony {
 		// Cascade through the data array
 		foreach($segments as $name) {
 			if(!is_array($data)) return;
-			if($name !== '') $data = $data[$name]; // In case the selector ends with '/' (or is nothing more than that)
+			if($name !== '') $data = $data[$name]; // In case the selector ends with the delimiter (or is nothing more than that)
 			if(!isset($data)) return;
 		}
 		return $data;
 	}
 	
-	// Extract the named attribute from the node (removes & returns it, returns NULL if attribute does not exist)
+	// Extract the named attribute from the node (removes & returns it, returns NULL if the attribute does not exist)
 	private function extractAttribute($node, $name) {
 		if(!$node->hasAttribute($name)) return;
 		$value = $node->getAttribute($name);
@@ -83,21 +91,32 @@ class Colony {
 		return $value;
 	}
 	
-	// Get all remaining attributes of the node in the form [selector (attribute with colon), template (attribute without colon)] and remove them
-	private function extractRemainingAttributes($node) {
-		$attributes = [];
+	// Get all features of the node and remove them afterwards
+	private function extractFeatures($node) {
+		$features = [];
 		$deleteAttributes = [];
 		foreach($node->attributes as $attribute) {
-			$isBinding = $attribute->nodeName[0] === ':';
-			//if($isBinding) $this->enableExpressions = true;
-			$qualifiedName = substr($attribute->nodeName, $isBinding);
-			$attributes[$qualifiedName][$isBinding] = $attribute->nodeValue;
-			$deleteAttributes[] = $attribute->nodeName;
+			if($this->config[self::LATE] !== $this->config[self::LATE]) var_Dump($this->config[self::LATE]);
+			
+			// Identify feature parts by their (possible) attribute name prefix
+			foreach([
+				self::EARLY => $this->config[self::EARLY], // Must be checked first in case it starts with the other prefix, like '::' and ':'
+				self::LATE => $this->config[self::LATE],
+				self::EXPRESSION => '', // Must be checked last, because it is the prefix of every string
+			] as $type => $check) {
+				if(substr($attribute->nodeName, 0, strlen($check)) !== $check) continue;
+				
+				// Group attributes by their qualified name (= without prefix) to form a feature
+				$qualifiedName = substr($attribute->nodeName, strlen($check));
+				$features[$qualifiedName][$type] = $attribute->nodeValue;
+				$deleteAttributes[] = $attribute->nodeName;
+				break;
+			}
 		}
 		
-		// Remove attributes in a seperate loop after that, not breaking the sibling-chain (same as for nodes)
+		// Remove attributes in a seperate loop after that, not breaking the sibling-chain (same as for nodes, see processChildren)
 		foreach($deleteAttributes as $name) $node->removeAttribute($name);
-		return $attributes;
+		return $features;
 	}
 	
 	// Get the DOM of a HTML file in the template folder
@@ -122,27 +141,27 @@ class Colony {
 	}
 	
 	/** Process a node. Returns true, if the node should be removed, otherwise NULL
-	 * The order of processing the attributes matters:
-	 * ':' should be processed first, so the other attributes can work with the bound property
-	 * ':foreach' should be processed before ':with'/':without', because :foreach on NULL makes the element disappear anyhow.
+	 * The order of processing the features matters (illustrated with default config):
+	 * ':' should be processed first, so the other features can work with the bound property
+	 * ':foreach' should be processed before ':with'/':without', because :foreach on something empty makes the element disappear anyhow.
 	 * But this way children can be checked against specific data for each of them.
 	 * ':as' should be processed after ':foreach', otherwise the whole array will be bound instead of the array element
 	 * ':import' should be processed after the arguments, so the 'href' may be set dynamically
 	*/
 	private function processNode($node, $globalData, $localData=NULL) {
-				
+		
 		// Skip irrelevant nodes
 		if(!($node instanceof DOMElement)) return; // <!DOCTYPE html> etc.
-		if($node instanceof DOMText) return; // Text between actual nodes (mostly whitespace), can't be bound to a property by attribute ':' anyway
+		if($node instanceof DOMText) return; // Text between actual nodes (mostly whitespace), can't have a selector anyway
 		
-		// Process special attributes
+		// Process special features
 		{
 			// Check whether the element should be bound to a property
-			$selector = $this->extractAttribute($node, ':');
+			$selector = $this->extractAttribute($node, $this->config[self::LATE]);
 			if(!is_null($selector)) $localData = $this->findProperty($selector, $globalData, $localData);
 			
 			// Check whether the element should be repeated for each element in an array
-			$selector = $this->extractAttribute($node, ':foreach');
+			$selector = $this->extractAttribute($node, $this->config[self::LATE].'foreach');
 			if(!is_null($selector)) {
 				$array = $this->findProperty($selector, $globalData, $localData);
 							
@@ -160,58 +179,61 @@ class Colony {
 			}
 			
 			// Check whether the element should only be rendered, if a property is NOT empty
-			$selector = $this->extractAttribute($node, ':with');
+			$selector = $this->extractAttribute($node, $this->config[self::LATE].'with');
 			if(!is_null($selector) && empty($this->findProperty($selector, $globalData, $localData))) return true;
 			
 			// Check whether the element should only be rendered, if a property IS empty
-			$selector = $this->extractAttribute($node, ':without');
+			$selector = $this->extractAttribute($node, $this->config[self::LATE].'without');
 			if(!is_null($selector) && !empty($this->findProperty($selector, $globalData, $localData))) return true;
 			
 			// Check whether the local data (e. g. array element) should be made available in the global data
-			$as = $this->extractAttribute($node, ':as');
+			$as = $this->extractAttribute($node, $this->config[self::LATE].'as');
 			if(!is_null($as)) $globalData[$as] = $localData;
 		}
 		
-		// Process regular attributes and text content
+		// Process remaining features
 		{
-			// If the node contains only text or nothing (text might be set by :text), treat its content as attribute
+			// If the node contains only text or nothing (text might be set by :text), treat its content as expression for a text-feature
 			$isEmpty = $node->childNodes->length === 0;
 			$onlyText = $node->childNodes->length === 1 && $node->firstChild instanceof DOMText;
 			if($isEmpty || $onlyText) {
 				
-				// Determine template and selector for the text
-				$template = $node->nodeValue;
-				$selector = $this->extractAttribute($node, ':'.$this->config['textAttribute']);
+				// Assemble the text-feature
+				$feature = [
+					self::EXPRESSION => $node->nodeValue,
+					self::EARLY => $this->extractAttribute($node, $this->config[self::EARLY].$this->config['textSelector']),
+					self::LATE => $this->extractAttribute($node, $this->config[self::LATE].$this->config['textSelector']),
+				];
 				
-				// Check, whether the attribute should be "activated" (has either a template with possible expression or a data binding)
-				if($template !== '' || isset($selector)) {
+				// Check, whether the feature should be "activated" (consists of either an expression or at least one selector)
+				if($feature[self::EXPRESSION] !== '' || isset($feature[self::EARLY]) || isset($feature[self::LATE])) {
 				
 					// Process and set the value
-					$value = $this->processValue($template, $selector, $this->config['textAttribute'], $globalData, $localData);
-					if(isset($value)) $node->nodeValue = $value;
+					$value = $this->processValue($feature, $this->config['textSelector'], $globalData, $localData);
+					$node->nodeValue = $value ?? '';
 				}
 			}
 			
-			// Process and set the values of the remaining attributes
-			foreach($this->extractRemainingAttributes($node) as $name => [$template, $selector]) {
-				$value = $this->processValue($template, $selector, $name, $globalData, $localData);
+			// Process and set the values of the remaining features
+			foreach($this->extractFeatures($node) as $name => $feature) {
+				$value = $this->processValue($feature, $name, $globalData, $localData);
 				if(isset($value)) $node->setAttribute($name, $value);
 			}
 		}
 		
-		// Process special tags
+		// Process special elements
 		{
-			// Check whether another template should be imported here
-			if($node->nodeName === ':import') {
+			// Check whether a partial template should be imported here
+			if($node->nodeName === $this->config[self::LATE].'import') {
 				
 				// Load the document by its href (inside the configured template folder)
 				$import = $this->getDocument($node->getAttribute('href'));
 				
 				// The document must only contain one direct child node, otherwise PHP fails parsing the document
-				if($import->childNodes->length > 1) throw new Exception('more than one child in import, use surrounding <:template>');
+				if($import->childNodes->length > 1) throw new Exception('more than one child in import, use surrounding template');
 				
-				// Multiple tags might be surrounded in a <:template> tag that just prevents PHP issues and won't be rendered
-				if($import->firstChild->nodeName === ':template') $import = $import->firstChild;
+				// Multiple elements might be surrounded in a <:template> tag that just prevents PHP issues and won't be rendered
+				if($import->firstChild->nodeName === $this->config[self::LATE].'template') $import = $import->firstChild;
 				
 				/** Import all child nodes, process them and check whether they should be removed
 				* Has to be done in this order! Assume there is an element with :foreach in the document that should be imported.
@@ -234,42 +256,54 @@ class Colony {
 		$this->processChildren($node, $globalData, $localData);
 	}
 	
-	// Process the value of an attribute or text content. Only called, if either the selector or template is set (may be empty)
-	private function processValue($template, $selector, $defaultSelector, $globalData, $localData) {
+	// Brings expressions together with data. Returns NULL if the assignment is invalid to clean expressions like class="%s" without proper assignment
+	private function processAssignment($expression, $selector, $defaultSelector, $globalData, $localData) {
 		
-		// Use the default selector if none is provided
-		if(is_null($selector) || $selector === '') {
-			$attributeData = $this->findProperty($defaultSelector, $globalData, $localData);
+		// Determine the feature data by a specified selector (like :class="selector" instead of just :class to only activate the feature)
+		if($selector !== '') $featureData = $this->findProperty($selector, $globalData, $localData);
+	
+		// Otherwise use the default selector
+		else {
+			$featureData = $this->findProperty($defaultSelector, $globalData, $localData);
 			
-			// In some cases, the local data should be directly applied to an attribute.
-			// This is viable for strings, pure arrays (to allow multiple placeholders %s) and objects (typically DateTime)
-			if(!isset($attributeData)) {
-				if(is_string($localData) || $this->isArray($localData) || is_object($localData)) $attributeData = $localData;
+			// In some cases, the local data should be directly applied to a feature.
+			// This is viable for scalars, pure arrays (to allow multiple placeholders %s) and objects (typically DateTime)
+			if(!isset($featureData)) {
+				if(is_scalar($localData) || $this->isArray($localData) || is_object($localData)) $featureData = $localData;
 			}
-			
-		// Otherwise, find the selected property
-		} else $attributeData = $this->findProperty($selector, $globalData, $localData);
+		}
 		
-		// If the template is not empty (attribute <name>="..." instead of just <name>), substitute possible expressions first
-		if(isset($template) && $template !== '') {
-			$displayedValue = $this->expressions[strtolower($template)] ?? $template;
-			
-			// If there is a data binding, format the template with it
-			if(isset($attributeData)) $displayedValue = $this->format($attributeData, $displayedValue);
+		// If there is a valid assignment and expression given, return the evaluation result
+		if(isset($featureData) && isset($expression) && $expression !== '') return $this->evaluate($expression, $featureData);
 		
-		// If the template is not provided or empty (to just trigger this function if no selector is provided),
-		// scalar data is directly used as displayed value, as long as it's not false. This is useful for switches like ':readonly'
-		} elseif(is_scalar($attributeData) && $attributeData !== false) $displayedValue = $attributeData;
-		
-		// Return the actual attribute/textnode value. Is null if none of the above cases apply
-		return $displayedValue;
+		// Otherwise directly return the (appropriate) data as value. For better control of non-valued features like :readonly, false is excluded (removes the feature)
+		elseif(is_scalar($featureData) && $featureData !== false) return $featureData;
 	}
 	
-	// Format data. Returns NULL if the data is not applicable. The attribute or text content won't be set then
-	private function format($data, $format) {
-		if(is_object($data)) return $data->format($format); // Mostly DateTime
-		if(is_array($data)) return vsprintf($format, $data); // Multiple placeholders
-		if(is_scalar($data)) return sprintf($format, $data); // Single placeholder
+	// Process the value of a feature. Only called, if there is at least one selector or an expression (but may be empty)
+	private function processValue($feature, $defaultSelector, $globalData, $localData) {
+		
+		// Start with a (possibly) given expression (or NULL)
+		$value = $feature[self::EXPRESSION];
+		
+		// Process the possible early assignment
+		if(isset($feature[self::EARLY])) $value = $this->processAssignment($value, $feature[self::EARLY], $defaultSelector, $globalData, $localData);
+		
+		// Substitute a possible expression
+		$value = $this->expressions[strtolower($value)] ?? $value;
+		
+		// Process the possible late assignment
+		if(isset($feature[self::LATE])) $value = $this->processAssignment($value, $feature[self::LATE], $defaultSelector, $globalData, $localData);
+		
+		// Return the actual feature value
+		return $value;
+	}
+	
+	// Evaluate expression with data. Returns NULL if the data is not applicable or intentionally set to false. The feature will be removed in this case.
+	private function evaluate($expression, $data) {
+		if(is_object($data)) return $data->format($expression); // Mostly DateTime
+		if(is_array($data)) return vsprintf($expression, $data); // Multiple placeholders
+		if(is_scalar($data) && $data !== false) return sprintf($expression, $data); // Single placeholder
 	}
 	
 	// Check whether the provided data is a non-associative array (has only numeric keys)
