@@ -96,7 +96,6 @@ class Colony {
 		$features = [];
 		$deleteAttributes = [];
 		foreach($node->attributes as $attribute) {
-			if($this->config[self::LATE] !== $this->config[self::LATE]) var_Dump($this->config[self::LATE]);
 			
 			// Identify feature parts by their (possible) attribute name prefix
 			foreach([
