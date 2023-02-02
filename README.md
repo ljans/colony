@@ -1,6 +1,6 @@
 # Colony
 
-*Colony* is a super lightweight and easy-to-use HTML template engine for PHP that fully supports localization. Direct links:
+Super lightweight and easy-to-use HTML template engine for PHP that fully supports localization. Direct links:
 
 - [Getting started](#getting-started)
 - [Wiki](https://github.com/ljans/colony/wiki)

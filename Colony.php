@@ -1,6 +1,6 @@
 <?php
 /*!
- * Colony HTML template engine v1.1
+ * Colony HTML template engine v1.2
  * Licensed under the MIT license
  * Copyright (c) 2022-05 Lukas Jans
  * https://github.com/ljans/colony
@@ -62,7 +62,7 @@ class Colony {
 	// Find a property in a nested data-object by a selector
 	private function findProperty($selector, $globalData, $localData) {
 		
-		// Return the local data if the selector is empty (attribute had value)
+		// Return the local data if the selector is empty (attribute had value '')
 		if($selector === '') return $localData;
 		
 		// Split the selector in segments by the delimiter
@@ -77,13 +77,13 @@ class Colony {
 		// Cascade through the data array
 		foreach($segments as $name) {
 			if(!is_array($data)) return;
-			if($name !== '') $data = $data[$name]; // In case the selector ends with the delimiter (or is nothing more than that)
+			if($name !== '') $data = $data[$name] ?? NULL; // In case the selector ends with the delimiter (or is nothing more than that)
 			if(!isset($data)) return;
 		}
 		return $data;
 	}
 	
-	// Extract the named attribute from the node (removes & returns it, returns NULL if the attribute does not exist)
+	// Extract the named attribute from the node (removes and returns it, returns NULL if the attribute does not exist)
 	private function extractAttribute($node, $name) {
 		if(!$node->hasAttribute($name)) return;
 		$value = $node->getAttribute($name);
@@ -209,7 +209,7 @@ class Colony {
 				
 					// Process and set the value
 					$value = $this->processValue($feature, $this->config['textSelector'], $globalData, $localData);
-					$node->nodeValue = $value ?? '';
+					$node->nodeValue = htmlspecialchars($value ?? '');
 				}
 			}
 			
@@ -283,13 +283,13 @@ class Colony {
 	private function processValue($feature, $defaultSelector, $globalData, $localData) {
 		
 		// Start with a (possibly) given expression (or NULL)
-		$value = $feature[self::EXPRESSION];
+		$value = $feature[self::EXPRESSION] ?? NULL;
 		
 		// Process the possible early assignment
 		if(isset($feature[self::EARLY])) $value = $this->processAssignment($value, $feature[self::EARLY], $defaultSelector, $globalData, $localData);
 		
 		// Substitute a possible expression
-		$value = $this->expressions[strtolower($value)] ?? $value;
+		if($value !== NULL) $value = $this->expressions[strtolower($value)] ?? $value;
 		
 		// Process the possible late assignment
 		if(isset($feature[self::LATE])) $value = $this->processAssignment($value, $feature[self::LATE], $defaultSelector, $globalData, $localData);
