@@ -52,10 +52,11 @@ This is as close to plain HTML as it gets, making templates much easier to creat
 
 ## Getting started
 
-Download a copy of [`Colony.php`](Colony.php) and include it into your PHP file:
+Download a copy of *Colony* and include it into your PHP file:
 
 ```php
 require 'Colony.php';
+require 'Colony.Handlers.php';
 ```
 
 Then create an instance of the `Colony` class:
