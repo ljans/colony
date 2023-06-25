@@ -1,6 +1,6 @@
 <?php
 /*!
- * Colony HTML template engine v2.0
+ * Colony HTML template engine v2.1
  * Licensed under the MIT license
  * Copyright (c) 2023 Lukas Jans
  * https://github.com/ljans/colony
@@ -88,10 +88,12 @@ class Colony {
 			$data = $globalData;
 		} else $data = $localData;
 			
-		// Cascade through the data array
+		// Cascade through the data array or object
 		foreach($segments as $name) {
-			if(!is_array($data)) return;
-			if($name !== '') $data = $data[$name] ?? NULL; // In case the selector ends with the separator (or is nothing more than that)
+			if($name === '') continue; // In case the selector ends with the separator (or is nothing more than that)
+			if(is_array($data)) $data = $data[$name] ?? NULL;
+			elseif(is_object($data)) $data = $data->$name ?? NULL;
+			else return;
 			if(!isset($data)) return;
 		}
 		return $data;
@@ -131,9 +133,11 @@ class Colony {
 	
 	// Get the DOM of a HTML file in the template folder
 	public function getDocument($filename) {
+		$path = $this->config['templateFolder'].'/'.$filename;
+		if(!file_exists($path)) throw new Exception('Document '.$path.' not found');
 		$document = new DOMDocument();
 		$flags = LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD; // LIBXML_NOBLANKS is not really working
-		@$document->loadHTMLFile($this->config['templateFolder'].'/'.$filename, $flags); // Surpress errors for invalid html
+		@$document->loadHTMLFile($path, $flags); // Surpress errors for invalid html
 		return $document;
 	}
 	

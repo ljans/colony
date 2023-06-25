@@ -1,6 +1,6 @@
 <?php namespace Colony;
 /*!
- * Default handlers for Colony v2.0
+ * Default handlers for Colony v2.1
  * Licensed under the MIT license
  * Copyright (c) 2023 Lukas Jans
  * https://github.com/ljans/colony
@@ -149,7 +149,7 @@ class AppendHandler extends Handler {
 		$import = $this->colony->getDocument($href);
 		
 		// The document must only contain one direct child node, otherwise PHP fails parsing the document
-		if($import->childNodes->length !== 1) throw new Exception('Imported document has not exactly one child element');
+		if($import->childNodes->length !== 1) throw new \Exception('Imported document has not exactly one child element');
 		
 		/** Import the first child node, process it and check whether it should be removed
 		* Has to be done in this order, because (necessarily) grouped elements by <:></:> will be appended before the current node on processing,
