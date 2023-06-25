@@ -1,6 +1,6 @@
 <?php
 /*!
- * Colony HTML template engine v2.1
+ * Colony HTML template engine v2.2
  * Licensed under the MIT license
  * Copyright (c) 2023 Lukas Jans
  * https://github.com/ljans/colony
@@ -128,6 +128,9 @@ class Colony {
 			if(!isset($stacks[$text])) $stacks[$text] = [];
 			$stacks[$text][0] = $node->nodeValue;
 		}
+		
+		// Sort stacks by ascending level (required for correct processing)
+		foreach($stacks as $index => $stack) ksort($stacks[$index]);
 		return $stacks;
 	}
 	
@@ -214,7 +217,7 @@ class Colony {
 	// Process the value of an attribute stack if there is at least one level specified (may be empty though)
 	public function processValue($stack, $defaultSelector, $globalData, $localData) {
 		
-		/** Process all attribute stack levels in ascending order
+		/** Process all (sorted) attribute stack levels in ascending order
 		 * The specific order of the statements below results in the desired process order:
 		 * - Use attribute level 0 (the expression) as value (specified by 'example')
 		 * - Try to substitute the expression
@@ -224,7 +227,6 @@ class Colony {
 		 * - ... (as long as there are more levels)
 		 * - Try to substitute the expression
 		 */
-		ksort($stack);
 		foreach($stack as $level => $item) {
 			
 			// If an expression is provided, use it as value

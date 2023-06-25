@@ -1,6 +1,6 @@
 <?php namespace Colony;
 /*!
- * Default handlers for Colony v2.1
+ * Default handlers for Colony v2.2
  * Licensed under the MIT license
  * Copyright (c) 2023 Lukas Jans
  * https://github.com/ljans/colony
