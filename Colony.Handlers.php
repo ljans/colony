@@ -1,6 +1,6 @@
 <?php namespace Colony;
 /*!
- * Default handlers for Colony v2.2
+ * Default handlers for Colony v2.3
  * Licensed under the MIT license
  * Copyright (c) 2023 Lukas Jans
  * https://github.com/ljans/colony
@@ -29,9 +29,7 @@ class NestingHandler extends Handler {
 	public function process($node, $stacks, $globalData, &$localData, $stack) {
 		
 		// Use the ordered list of levels to cascade through several layers of a multidimensional array in one element
-		foreach($stack as $value) {
-			$localData = $this->colony->findProperty($value, $globalData, $localData);
-		}
+		foreach($stack as $value) $localData = $this->colony->findProperty($value, $globalData, $localData);
 	}
 }
 
@@ -131,33 +129,37 @@ class TextHandler extends Handler {
 	static $attribute = 'text';
 	public function process($node, $stacks, $globalData, $localData, $stack) {
 		$value = $this->colony->processValue($stack, $this::$attribute, $globalData, $localData);
-		if($node->childNodes->length === 0 || isset($stack[0])) $node->nodeValue = htmlspecialchars($value ?? '');
+		if($node->childNodes->length === 0 || isset($stack[0])) $node->nodeValue = $value ?? '';
 	}
 }
 
 /**
- * Append one node from another document to the current node
+ * Process the value like for a regular attribute but set is as html instead
  *
- * Example: <div :append="extra.html"></div>
+ * Example: <div :html="article/text"></div>
+ */
+class HTMLHandler extends Handler {
+	static $attribute = 'html';
+	public function process($node, $stacks, $globalData, $localData, $stack) {
+		$value = $this->colony->processValue($stack, $this::$attribute, $globalData, $localData);
+		if($value == '') return;
+		$extraDOM = $this->colony->loadHTML($value);
+		$this->colony->append($extraDOM, $node, $globalData, $localData);
+	}
+}
+
+/**
+ * Process the value like for a regular attribute but use it as filename for a template to append
+ *
+ * Example: <div append="extra.html"></div>
  */
 class AppendHandler extends Handler {
 	static $attribute = 'append';
 	public function process($node, $stacks, $globalData, $localData, $stack) {
-		
-		// Load the document by its processed attribute value as filename (inside the configured template folder)
 		$href = $this->colony->processValue($stack, $this::$attribute, $globalData, $localData);
-		$import = $this->colony->getDocument($href);
-		
-		// The document must only contain one direct child node, otherwise PHP fails parsing the document
-		if($import->childNodes->length !== 1) throw new \Exception('Imported document has not exactly one child element');
-		
-		/** Import the first child node, process it and check whether it should be removed
-		* Has to be done in this order, because (necessarily) grouped elements by <:></:> will be appended before the current node on processing,
-		* so they have to have a parent node and must therefore already be imported to the main document.
-		*/
-		$child = $node->ownerDocument->importNode($import->firstChild, true);
-		$node->appendChild($child);
-		$stacks = $this->colony->extractAttributeStacks($child);
-		if($this->colony->processNode($child, $stacks, $globalData, $localData)) $node->removeChild($child);
+		$template = $this->colony->getTemplate($href);
+		if($template == '') return;
+		$extraDOM = $this->colony->loadHTML($template);
+		$this->colony->append($extraDOM, $node, $globalData, $localData);
 	}
 }

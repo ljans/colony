@@ -1,6 +1,6 @@
 <?php
 /*!
- * Colony HTML template engine v2.2
+ * Colony HTML template engine v2.3
  * Licensed under the MIT license
  * Copyright (c) 2023 Lukas Jans
  * https://github.com/ljans/colony
@@ -26,6 +26,7 @@ class Colony {
 		'Colony\ForeachHandler', // Second, because it's also changing the local data (to the array item of each copy)
 		'Colony\WithHandler', 'Colony\WithoutHandler', // Third, because the following handlers may become needless if the element will be removed anyway
 		'Colony\TextHandler',
+		'Colony\HTMLHandler',
 		'Colony\AppendHandler',
 	];
 	
@@ -60,13 +61,19 @@ class Colony {
 		}
 	}
 	
-	// Render a template file with the given data as (associative) array
-	public function renderTemplateFile($name, $data=[]) {
+	// Render a template string with the given data as (associative) array or object
+	public function renderTemplate($template, $data=[]) {
 		
 		// Load the document, process all its direct children (cascades) and return the result HTML
-		$document = $this->getDocument($name);
+		$document = $this->loadHTML($template);
 		$this->processChildren($document, $data, $data);
 		return $document->saveHTML();
+	}
+	
+	// Render a template file
+	public function renderTemplateFile($name, $data=[]) {
+		$template = $this->getTemplate($name);
+		return $this->renderTemplate($template, $data);
 	}
 	
 	// Find a property in a nested data-object by a selector
@@ -134,14 +141,39 @@ class Colony {
 		return $stacks;
 	}
 	
-	// Get the DOM of a HTML file in the template folder
-	public function getDocument($filename) {
-		$path = $this->config['templateFolder'].'/'.$filename;
-		if(!file_exists($path)) throw new Exception('Document '.$path.' not found');
-		$document = new DOMDocument();
-		$flags = LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD; // LIBXML_NOBLANKS is not really working
-		@$document->loadHTMLFile($path, $flags); // Surpress errors for invalid html
-		return $document;
+	// Return the contents of a template file
+	public function getTemplate($name) {
+		$path = $this->config['templateFolder'].'/'.$name;
+		if(!file_exists($path)) throw new Exception('Template '.$path.' not found');
+		return file_get_contents($path);
+	}
+	
+	// Encode all characters except the HTML characters in ascii-range 0-0x7f and load them into a new document
+	public function loadHTML($html) {
+		$dom = new DOMDocument();
+		$html = mb_encode_numericentity($html, [0x7f, 0xffff, 0, 0xffff], 'UTF-8');
+		$dom->loadHTML($html, LIBXML_NOWARNING | LIBXML_NOERROR);
+		return $dom;
+	}
+	
+	// Append the contents of an extra DOM to an existing node in the main document
+	public function append($extraDOM, $toNode, $globalData, $localData) {
+		$addNodes = [];
+		foreach(['head','body'] as $root) {
+			$query = $extraDOM->getElementsByTagName($root);
+			if($query->count() !== 1) continue;
+			foreach($query->item(0)->childNodes as $child) $addNodes[] = $child;
+		}
+		
+		/** Import each child, process it and check whether it should be removed.
+		* Has to be done in this order, because otherwise :foreach or <:></:> have no parent to append to.
+		*/
+		foreach($addNodes as $newNode) {
+			$newNode = $toNode->ownerDocument->importNode($newNode, true);
+			$toNode->appendChild($newNode);
+			$stacks = $this->extractAttributeStacks($newNode);
+			if($this->processNode($newNode, $stacks, $globalData, $localData)) $toNode->removeChild($newNode);
+		}		
 	}
 	
 	/** Process all children of the provided node
