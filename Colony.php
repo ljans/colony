@@ -1,6 +1,6 @@
 <?php
 /*!
- * Colony HTML template engine v2.3
+ * Colony HTML template engine v2.4
  * Licensed under the MIT license
  * Copyright (c) 2023 Lukas Jans
  * https://github.com/ljans/colony

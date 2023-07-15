@@ -1,6 +1,6 @@
 <?php namespace Colony;
 /*!
- * Default handlers for Colony v2.3
+ * Default handlers for Colony v2.4
  * Licensed under the MIT license
  * Copyright (c) 2023 Lukas Jans
  * https://github.com/ljans/colony
@@ -129,7 +129,9 @@ class TextHandler extends Handler {
 	static $attribute = 'text';
 	public function process($node, $stacks, $globalData, $localData, $stack) {
 		$value = $this->colony->processValue($stack, $this::$attribute, $globalData, $localData);
-		if($node->childNodes->length === 0 || isset($stack[0])) $node->nodeValue = $value ?? '';
+		
+		// Converting HTML special chars is required because e.g. & would otherwise yield "unterminated entity reference"
+		if($node->childNodes->length === 0 || isset($stack[0])) $node->nodeValue = htmlspecialchars($value ?? '');
 	}
 }
 
