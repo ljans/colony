@@ -145,7 +145,7 @@ class HTMLHandler extends Handler {
 	public function process($node, $stacks, $globalData, $localData, $stack) {
 		$value = $this->colony->processValue($stack, $this::$attribute, $globalData, $localData);
 		if($value == '') return;
-		$extraDOM = $this->colony->loadHTML($value);
+		$extraDOM = $this->colony->loadPartialHTML($value);
 		$this->colony->append($extraDOM, $node, $globalData, $localData);
 	}
 }
@@ -161,7 +161,7 @@ class AppendHandler extends Handler {
 		$href = $this->colony->processValue($stack, $this::$attribute, $globalData, $localData);
 		$template = $this->colony->getTemplate($href);
 		if($template == '') return;
-		$extraDOM = $this->colony->loadHTML($template);
+		$extraDOM = $this->colony->loadPartialHTML($template);
 		$this->colony->append($extraDOM, $node, $globalData, $localData);
 	}
 }

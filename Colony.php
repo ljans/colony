@@ -152,28 +152,27 @@ class Colony {
 	public function loadHTML($html) {
 		$dom = new DOMDocument();
 		$html = mb_encode_numericentity($html, [0x7f, 0xffff, 0, 0xffff], 'UTF-8');
-		$dom->loadHTML($html, LIBXML_NOWARNING | LIBXML_NOERROR);
+		$dom->loadHTML($html, LIBXML_NOWARNING | LIBXML_NOERROR | LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
 		return $dom;
 	}
 	
-	// Append the contents of an extra DOM to an existing node in the main document
+	// Group all root nodes in one virtual root node because otherwise the DOM gets messed up
+	public function loadPartialHTML($html) {
+		return $this->loadHTML('<:>'.$html.'</:>');
+	}
+	
+	/** Append the children of an extra DOM to an existing node in the main document
+	 * Caution: Multiple root-elements mess up the DOM, but they can simply be grouped by <:></:> to one root element.
+	 * First import, then process and check whether it should be removed.
+	 * This has to be done in this order, because otherwise processing :foreach or <:></:> lack a parent to append to.
+	 */
 	public function append($extraDOM, $toNode, $globalData, $localData) {
-		$addNodes = [];
-		foreach(['head','body'] as $root) {
-			$query = $extraDOM->getElementsByTagName($root);
-			if($query->count() !== 1) continue;
-			foreach($query->item(0)->childNodes as $child) $addNodes[] = $child;
-		}
-		
-		/** Import each child, process it and check whether it should be removed.
-		* Has to be done in this order, because otherwise :foreach or <:></:> have no parent to append to.
-		*/
-		foreach($addNodes as $newNode) {
+		foreach($extraDOM->childNodes as $newNode) {
 			$newNode = $toNode->ownerDocument->importNode($newNode, true);
 			$toNode->appendChild($newNode);
 			$stacks = $this->extractAttributeStacks($newNode);
 			if($this->processNode($newNode, $stacks, $globalData, $localData)) $toNode->removeChild($newNode);
-		}		
+		}
 	}
 	
 	/** Process all children of the provided node
