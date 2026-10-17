@@ -1,288 +1,456 @@
 <?php
 /*!
- * Colony HTML template engine v2.4
+ * Colony HTML template engine v2.5
  * Licensed under the MIT license
- * Copyright (c) 2023 Lukas Jans
+ * Copyright (c) 2026 Lukas Jans
  * https://github.com/ljans/colony
  */
-class Colony {
-
-	// Array for expressions from ini file
-	private $expressions = [];
-	
-	// Array for attribute handlers
-	private $handlers = [];
-	
-	// Default configuration
-	private $defaultConfig = [
-		'nestingSeparator' => '/',
-		'listingSeparator' => ',',
-		'templateFolder' => 'templates',
-	];
-	
-	// Default handlers (ordered)
-	private $defaultHandlers = [
-		'Colony\NestingHandler', // First, because it's changing the local data for all other handlers
-		'Colony\ForeachHandler', // Second, because it's also changing the local data (to the array item of each copy)
-		'Colony\WithHandler', 'Colony\WithoutHandler', // Third, because the following handlers may become needless if the element will be removed anyway
-		'Colony\TextHandler',
-		'Colony\HTMLHandler',
-		'Colony\AppendHandler',
-	];
-	
-	// Construct with optional custom configuration array and custom handlers
-	private $config;
-	public function __construct($config=[], $handlers=NULL) {
+namespace {
+	class Colony {
 		
-		// Overwrite the default config with the custom config
-		$this->config = array_merge($this->defaultConfig, $config);
+		// Array for expressions from ini file
+		private $expressions = [];
 		
-		// Insantiate all default or (if provided) custom handlers
-		foreach($handlers ?? $this->defaultHandlers as $handler) $this->handlers[] = new $handler($this);
-	}
-	
-	// Load an expression file
-	public function loadExpressionFile($path) {
+		// Array for attribute handlers
+		private $handlers = [];
 		
-		// Array of key-value pairs or sections of those or a mix
-		$entriesOrSections = parse_ini_file($path, true);
+		// Default configuration
+		private $defaultConfig = [
+			'nestingSeparator' => '/',
+			'listingSeparator' => ',',
+			'templateFolder' => 'templates',
+		];
 		
-		// Iterate over first layer
-		foreach($entriesOrSections as $keyOrSectionName => $valueOrEntries) {
+		// Default handlers (ordered)
+		private $defaultHandlers = [
+			'Colony\NestingHandler', // First, because it's changing the local data for all other handlers
+			'Colony\ForeachHandler', // Second, because it's also changing the local data (to the array item of each copy)
+			'Colony\WithHandler', 'Colony\WithoutHandler', // Third, because the following handlers may become needless if the element will be removed anyway
+			'Colony\TextHandler',
+			'Colony\HTMLHandler',
+			'Colony\AppendHandler',
+		];
+		
+		// Construct with optional custom configuration array and custom handlers
+		private $config;
+		public function __construct($config=[], $handlers=NULL) {
 			
-			// Store plain key-values pairs
-			if(is_scalar($valueOrEntries)) {
-				$this->expressions[strtolower($keyOrSectionName)] = $valueOrEntries;
+			// Overwrite the default config with the custom config
+			$this->config = array_merge($this->defaultConfig, $config);
+			
+			// Insantiate all default or (if provided) custom handlers
+			foreach($handlers ?? $this->defaultHandlers as $handler) $this->handlers[] = new $handler($this);
+		}
+		
+		// Load an expression file
+		public function loadExpressionFile($path) {
+			
+			// Array of key-value pairs or sections of those or a mix
+			$entriesOrSections = parse_ini_file($path, true);
+			
+			// Iterate over first layer
+			foreach($entriesOrSections as $keyOrSectionName => $valueOrEntries) {
 				
-			// Store all key-value pairs in a group
-			} else foreach($valueOrEntries as $key => $value) {
-				$this->expressions[strtolower($keyOrSectionName.'.'.$key)] = $value;
+				// Store plain key-values pairs
+				if(is_scalar($valueOrEntries)) {
+					$this->expressions[strtolower($keyOrSectionName)] = $valueOrEntries;
+					
+				// Store all key-value pairs in a group
+				} else foreach($valueOrEntries as $key => $value) {
+					$this->expressions[strtolower($keyOrSectionName.'.'.$key)] = $value;
+				}
 			}
 		}
-	}
-	
-	// Render a template string with the given data as (associative) array or object
-	public function renderTemplate($template, $data=[]) {
 		
-		// Load the document, process all its direct children (cascades) and return the result HTML
-		$document = $this->loadHTML($template);
-		$this->processChildren($document, $data, $data);
-		return $document->saveHTML();
-	}
-	
-	// Render a template file
-	public function renderTemplateFile($name, $data=[]) {
-		$template = $this->getTemplate($name);
-		return $this->renderTemplate($template, $data);
-	}
-	
-	// Find a property in a nested data-object by a selector
-	public function findProperty($selector, $globalData, $localData) {
-		
-		// Return the local data if the selector is empty (attribute level was present but had value '')
-		if($selector === '') return $localData;
-		
-		// Resolve combined selectors
-		$parts = explode($this->config['listingSeparator'], $selector);
-		if(count($parts) > 1) return array_map(fn($part) => $this->findProperty($part, $globalData, $localData), $parts);
-		
-		// Split a nested selector in segments
-		$segments = explode($this->config['nestingSeparator'], $selector);
-		
-		// Decide, whether the selector is local or global (starts with separator)
-		if($segments[0] === '') {
-			unset($segments[0]);
-			$data = $globalData;
-		} else $data = $localData;
+		// Render a template string with the given data as (associative) array or object
+		public function renderTemplate($template, $data=[]) {
 			
-		// Cascade through the data array or object
-		foreach($segments as $name) {
-			if($name === '') continue; // In case the selector ends with the separator (or is nothing more than that)
-			if(is_array($data)) $data = $data[$name] ?? NULL;
-			elseif(is_object($data)) $data = $data->$name ?? NULL;
-			else return;
-			if(!isset($data)) return;
+			// Load the document, process all its direct children (cascades) and return the result HTML
+			$document = $this->loadHTML($template);
+			$this->processChildren($document, $data, $data);
+			return $document->saveHTML();
 		}
-		return $data;
-	}
-	
-	// Get all attribute stacks of the node and remove them afterwards
-	public function extractAttributeStacks($node) {
-		$stacks = [];
-		$remove = [];
-		foreach($node->attributes ?? [] as $attribute) {
+		
+		// Render a template file
+		public function renderTemplateFile($name, $data=[]) {
+			$template = $this->getTemplate($name);
+			return $this->renderTemplate($template, $data);
+		}
+		
+		// Find a property in a nested data-object by a selector
+		public function findProperty($selector, $globalData, $localData) {
 			
-			// Split into stack level and normalized attribute name
-			$name = $attribute->nodeName;
-			$level = 0;
-			while(strlen($name) > 0 && $name[0] === ':') {
-				$level++;
-				$name = substr($name, 1);
+			// Return the local data if the selector is empty (attribute level was present but had value '')
+			if($selector === '') return $localData;
+			
+			// Resolve combined selectors
+			$parts = explode($this->config['listingSeparator'], $selector);
+			if(count($parts) > 1) return array_map(fn($part) => $this->findProperty($part, $globalData, $localData), $parts);
+			
+			// Split a nested selector in segments
+			$segments = explode($this->config['nestingSeparator'], $selector);
+			
+			// Decide, whether the selector is local or global (starts with separator)
+			if($segments[0] === '') {
+				unset($segments[0]);
+				$data = $globalData;
+			} else $data = $localData;
+				
+			// Cascade through the data array or object
+			foreach($segments as $name) {
+				if($name === '') continue; // In case the selector ends with the separator (or is nothing more than that)
+				if(is_array($data)) $data = $data[$name] ?? NULL;
+				elseif(is_object($data)) $data = $data->$name ?? NULL;
+				else return;
+				if(!isset($data)) return;
+			}
+			return $data;
+		}
+		
+		// Get all attribute stacks of the node and remove them afterwards
+		public function extractAttributeStacks($node) {
+			$stacks = [];
+			$remove = [];
+			foreach($node->attributes ?? [] as $attribute) {
+				
+				// Split into stack level and normalized attribute name
+				$name = $attribute->nodeName;
+				$level = 0;
+				while(strlen($name) > 0 && $name[0] === ':') {
+					$level++;
+					$name = substr($name, 1);
+				}
+				
+				// Group into stacks
+				if(!isset($stacks[$name])) $stacks[$name] = [];
+				$stacks[$name][$level] = $attribute->nodeValue;
+				$remove[] = $attribute->nodeName;
 			}
 			
-			// Group into stacks
-			if(!isset($stacks[$name])) $stacks[$name] = [];
-			$stacks[$name][$level] = $attribute->nodeValue;
-			$remove[] = $attribute->nodeName;
+			// Remove attributes in a seperate loop after that, not breaking the sibling-chain (same as for nodes, see processChildren)
+			foreach($remove as $name) $node->removeAttribute($name);
+			
+			// If the node contains only text, use it as level 0 (expression) of the 'text' attribute stack
+			if($node->childNodes->length === 1 && $node->firstChild instanceof DOMText) {
+				$text = Colony\TextHandler::$attribute;
+				if(!isset($stacks[$text])) $stacks[$text] = [];
+				$stacks[$text][0] = $node->nodeValue;
+			}
+			
+			// Sort stacks by ascending level (required for correct processing)
+			foreach($stacks as $index => $stack) ksort($stacks[$index]);
+			return $stacks;
 		}
 		
-		// Remove attributes in a seperate loop after that, not breaking the sibling-chain (same as for nodes, see processChildren)
-		foreach($remove as $name) $node->removeAttribute($name);
-		
-		// If the node contains only text, use it as level 0 (expression) of the 'text' attribute stack
-		if($node->childNodes->length === 1 && $node->firstChild instanceof DOMText) {
-			$text = Colony\TextHandler::$attribute;
-			if(!isset($stacks[$text])) $stacks[$text] = [];
-			$stacks[$text][0] = $node->nodeValue;
+		// Return the contents of a template file
+		public function getTemplate($name) {
+			$path = $this->config['templateFolder'].'/'.$name;
+			if(!file_exists($path)) throw new Exception('Template '.$path.' not found');
+			return file_get_contents($path);
 		}
 		
-		// Sort stacks by ascending level (required for correct processing)
-		foreach($stacks as $index => $stack) ksort($stacks[$index]);
-		return $stacks;
+		// Encode all characters except the HTML characters in ascii-range 0-0x7f and load them into a new document
+		public function loadHTML($html) {
+			$dom = new DOMDocument();
+			$html = mb_encode_numericentity($html, [0x7f, 0xffff, 0, 0xffff], 'UTF-8');
+			$dom->loadHTML($html, LIBXML_NOWARNING | LIBXML_NOERROR | LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+			return $dom;
+		}
+		
+		// Group all root nodes in one virtual root node because otherwise the DOM gets messed up
+		public function loadPartialHTML($html) {
+			return $this->loadHTML('<:>'.$html.'</:>');
+		}
+		
+		/** Append the children of an extra DOM to an existing node in the main document
+		 * Caution: Multiple root-elements mess up the DOM, but they can simply be grouped by <:></:> to one root element.
+		 * First import the node, then process it and check whether it should be removed.
+		 * This has to be done in this order, because otherwise processing :foreach or <:></:> lack a parent to append to.
+		 */
+		public function append($extraDOM, $toNode, $globalData, $localData) {
+			foreach($extraDOM->childNodes as $newNode) {
+				$newNode = $toNode->ownerDocument->importNode($newNode, true);
+				$toNode->appendChild($newNode);
+				$stacks = $this->extractAttributeStacks($newNode);
+				if($this->processNode($newNode, $stacks, $globalData, $localData)) $toNode->removeChild($newNode);
+			}
+		}
+		
+		/** Process all children of the provided node
+		 * If processNode evaluates to true, the node will be removed.
+		 * The removal must not happen before all nodes are processed, because the 'foreach' loop internally seems to work with 'nextSibling'.
+		 * That means if the current node gets removed, it has no more next sibling and the loop immediately ends.
+		 */
+		public function processChildren($node, $globalData, $localData) {
+			$remove = [];
+			foreach($node->childNodes as $child) {
+				$stacks = $this->extractAttributeStacks($child);
+				if($this->processNode($child, $stacks, $globalData, $localData)) $remove[] = $child;
+			}
+			foreach($remove as $child) $node->removeChild($child);
+		}
+		
+		// Process a node and return true, if it should be removed
+		public function processNode($node, $stacks, $globalData, $localData=NULL) {
+			
+			// Skip irrelevant nodes
+			if(!($node instanceof DOMElement)) return; // <!DOCTYPE html> etc.
+			if($node instanceof DOMText) return; // Text between actual nodes (mostly whitespace), can't have attributes anyway
+			
+			// Process attribute handlers if there is a matching stack
+			foreach($this->handlers as $handler) {
+				if(!isset($stacks[$handler::$attribute])) continue;
+				$stack = $stacks[$handler::$attribute];
+				unset($stacks[$handler::$attribute]);
+				if($handler->process($node, $stacks, $globalData, $localData, $stack) === true) return true;
+			}
+			
+			// Process and set the values of the remaining attribute stacks
+			foreach($stacks as $name => $stack) {
+				$value = $this->processValue($stack, $name, $globalData, $localData);
+				if(isset($value)) $node->setAttribute($name, $value);
+			}
+			
+			// Process all child nodes
+			$this->processChildren($node, $globalData, $localData);
+			
+			// Remove a technical wrapper node (<:></:>) but not its children
+			if($node->nodeName === ':') {
+				$add = [];
+				foreach($node->childNodes as $child) $add[] = $child;
+				foreach($add as $child) $node->parentNode->insertBefore($child, $node);
+				return true;
+			}
+		}
+		
+		// Assign data by it specified selector to an attribute and return NULL if the assignment is invalid to clean expressions like class="%s" without proper assignment
+		public function processAssignment($currentValue, $selector, $defaultSelector, $globalData, $localData) {
+			
+			// Determine the assigned data by a specified selector like :class="selector"
+			if($selector !== '') $assignedData = $this->findProperty($selector, $globalData, $localData);
+		
+			// Otherwise use the default selector (node name) for plain attributes like :class
+			else {
+				$assignedData = $this->findProperty($defaultSelector, $globalData, $localData);
+				
+				// If no property could be found, assign the local data itself as long as its a scalar, numeric array (to allow multiple placeholders like %s) or object (typically DateTime)
+				if(!isset($assignedData)) {
+					if(is_scalar($localData) || $this->isArray($localData) || is_object($localData)) $assignedData = $localData;
+				}
+			}
+			
+			// If there is a valid assignment and expression given, return the evaluation result
+			if(isset($assignedData) && isset($currentValue) && $currentValue !== '') return $this->evaluate($currentValue, $assignedData);
+			
+			// Otherwise directly return the (appropriate) data as value. For better control of non-valued attributes like 'readonly', false is excluded and therefore removes the attribute
+			elseif(is_scalar($assignedData) && $assignedData !== false) return $assignedData;
+		}
+		
+		// Process the value of an attribute stack if there is at least one level specified (may be empty though)
+		public function processValue($stack, $defaultSelector, $globalData, $localData) {
+			
+			/** Process all (sorted) attribute stack levels in ascending order
+			 * The specific order of the statements below results in the desired process order:
+			 * - Use attribute level 0 (the expression) as value (specified by 'example')
+			 * - Try to substitute the expression
+			 * - Try to process the assignment from attribute level 1 (specified by ':example')
+			 * - Try to substitute the expression
+			 * - Try to process the assignment from attribute level 2 (specified by '::example')
+			 * - ... (as long as there are more levels)
+			 * - Try to substitute the expression
+			 */
+			foreach($stack as $level => $item) {
+				
+				// If an expression is provided, use it as value
+				if($level === 0) $value = $stack[0];
+				
+				// If a selector is provided, try to process the assignment
+				if($level > 0) $value = $this->processAssignment($value ?? NULL, $item, $defaultSelector, $globalData, $localData);
+				
+				// Try to substitute an expression
+				if(isset($value)) $value = $this->expressions[strtolower($value)] ?? $value;
+			}
+			
+			// Return the actual attribute value
+			return $value;
+		}
+		
+		// Evaluate an expression with data or return NULL if the data is not applicable or intentionally set to false, which results in the removal of the attribute
+		public function evaluate($expression, $data) {
+			if(is_object($data)) return $data->format($expression); // Mostly DateTime
+			if(is_array($data)) return vsprintf($expression, $data); // Multiple placeholders
+			if(is_scalar($data) && $data !== false) return sprintf($expression, $data); // Single placeholder
+		}
+		
+		// Check whether the provided data is a non-associative array (has only numeric keys)
+		public function isArray($data) {
+			return is_array($data) && array_values($data) === $data;
+		}
 	}
-	
-	// Return the contents of a template file
-	public function getTemplate($name) {
-		$path = $this->config['templateFolder'].'/'.$name;
-		if(!file_exists($path)) throw new Exception('Template '.$path.' not found');
-		return file_get_contents($path);
+}
+
+/**
+ * Handler classes
+ */
+namespace Colony {
+	abstract class Handler {
+		protected $colony;
+		static $attribute;
+		
+		// Construct with colony instance
+		public function __construct($colony) {
+			$this->colony = $colony;
+		}
 	}
-	
-	// Encode all characters except the HTML characters in ascii-range 0-0x7f and load them into a new document
-	public function loadHTML($html) {
-		$dom = new DOMDocument();
-		$html = mb_encode_numericentity($html, [0x7f, 0xffff, 0, 0xffff], 'UTF-8');
-		$dom->loadHTML($html, LIBXML_NOWARNING | LIBXML_NOERROR | LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
-		return $dom;
-	}
-	
-	// Group all root nodes in one virtual root node because otherwise the DOM gets messed up
-	public function loadPartialHTML($html) {
-		return $this->loadHTML('<:>'.$html.'</:>');
-	}
-	
-	/** Append the children of an extra DOM to an existing node in the main document
-	 * Caution: Multiple root-elements mess up the DOM, but they can simply be grouped by <:></:> to one root element.
-	 * First import, then process and check whether it should be removed.
-	 * This has to be done in this order, because otherwise processing :foreach or <:></:> lack a parent to append to.
+
+	/**
+	 * The assigned property is used as new local dataset for this node and all of its children.
+	 *
+	 * Example 1: <div :="user" :text="name"></div>
+	 * Equivalent to: <div :text="user/name"></div>
+	 *
+	 * Example 2: <div :="one" ::="two" :::="three"></div>
+	 * Equivalent to: <div :="one/two/three"></div>
 	 */
-	public function append($extraDOM, $toNode, $globalData, $localData) {
-		foreach($extraDOM->childNodes as $newNode) {
-			$newNode = $toNode->ownerDocument->importNode($newNode, true);
-			$toNode->appendChild($newNode);
-			$stacks = $this->extractAttributeStacks($newNode);
-			if($this->processNode($newNode, $stacks, $globalData, $localData)) $toNode->removeChild($newNode);
+	class NestingHandler extends Handler {
+		static $attribute = '';
+		public function process($node, $stacks, $globalData, &$localData, $stack) {
+			
+			// Use the ordered list of levels to cascade through several layers of a multidimensional array in one element
+			foreach($stack as $value) $localData = $this->colony->findProperty($value, $globalData, $localData);
 		}
 	}
-	
-	/** Process all children of the provided node
-	 * If processNode evaluates to true, the node will be removed.
-	 * The removal must not happen before all nodes are processed, because the 'foreach' loop internally seems to work with 'nextSibling'.
-	 * That means if the current node gets removed, it has no more next sibling and the loop immediately ends.
+
+	/**
+	 * The element including all its children get repeated for each item in an assigned array
+	 *
+	 * Example: <div :foreach="products"></div>
 	 */
-	public function processChildren($node, $globalData, $localData) {
-		$remove = [];
-		foreach($node->childNodes as $child) {
-			$stacks = $this->extractAttributeStacks($child);
-			if($this->processNode($child, $stacks, $globalData, $localData)) $remove[] = $child;
-		}
-		foreach($remove as $child) $node->removeChild($child);
-	}
-	
-	// Process a node and return true, if it should be removed
-	public function processNode($node, $stacks, $globalData, $localData=NULL) {
-		
-		// Skip irrelevant nodes
-		if(!($node instanceof DOMElement)) return; // <!DOCTYPE html> etc.
-		if($node instanceof DOMText) return; // Text between actual nodes (mostly whitespace), can't have attributes anyway
-		
-		// Process attribute handlers if there is a matching stack
-		foreach($this->handlers as $handler) {
-			if(!isset($stacks[$handler::$attribute])) continue;
-			$stack = $stacks[$handler::$attribute];
-			unset($stacks[$handler::$attribute]);
-			if($handler->process($node, $stacks, $globalData, $localData, $stack) === true) return true;
-		}
-		
-		// Process and set the values of the remaining attribute stacks
-		foreach($stacks as $name => $stack) {
-			$value = $this->processValue($stack, $name, $globalData, $localData);
-			if(isset($value)) $node->setAttribute($name, $value);
-		}
-		
-		// Process all child nodes
-		$this->processChildren($node, $globalData, $localData);
-		
-		// Remove a technical wrapper node (<:></:>) but not its children
-		if($node->nodeName === ':') {
-			$add = [];
-			foreach($node->childNodes as $child) $add[] = $child;
-			foreach($add as $child) $node->parentNode->insertBefore($child, $node);
+	class ForeachHandler extends Handler {
+		static $attribute = 'foreach';
+		public function process($node, $stacks, $globalData, $localData, $stack) {
+			
+			// Start with the local data as single item to iterate over
+			$totalItems = [$localData];
+			
+			// Go through the ordered list of levels
+			foreach($stack as $level => $value) {
+				
+				// If an expression (level 0) is provided, use it as JSON source for the array of items
+				if($level === 0) {
+					$totalItems = json_decode($value, true);
+					continue;
+				}
+				
+				// Try to go one level deeper in each of the current items (which are supposed to be arrays themselves if another level is specified) or keep the current level if not
+				$newTotalItems = [];
+				foreach($totalItems as $item) {
+					$array = $this->colony->findProperty($value, $globalData, $item);
+					if(is_array($array)) $newTotalItems = array_merge($newTotalItems, $array);
+					else $newTotalItems[] = $item;
+				}
+				$totalItems = $newTotalItems;
+			}
+			
+			// Clone the node for each item, insert it, process it and check whether it should be removed. Must be in this order, see AppendHandler for more information.
+			foreach($totalItems as $childElementData) {
+				$copy = $node->cloneNode(true);
+				$copy = $node->parentNode->insertBefore($copy, $node);
+				if($this->colony->processNode($copy, $stacks, $globalData, $childElementData)) $node->parentNode->removeChild($copy);
+			}
+				
+			// Mark the current node for removal
 			return true;
 		}
 	}
-	
-	// Assign data by it specified selector to an attribute and return NULL if the assignment is invalid to clean expressions like class="%s" without proper assignment
-	public function processAssignment($currentValue, $selector, $defaultSelector, $globalData, $localData) {
-		
-		// Determine the assigned data by a specified selector like :class="selector"
-		if($selector !== '') $assignedData = $this->findProperty($selector, $globalData, $localData);
-	
-		// Otherwise use the default selector (node name) for plain attributes like :class
-		else {
-			$assignedData = $this->findProperty($defaultSelector, $globalData, $localData);
+
+	/**
+	 * The element including all its children are removed if a condition does not meet the specified mode
+	 */
+	abstract class ConditionHandler extends Handler {
+		static $mode;
+		public function process($node, $stacks, $globalData, $localData, $stack) {
 			
-			// If no property could be found, assign the local data itself as long as its a scalar, numeric array (to allow multiple placeholders like %s) or object (typically DateTime)
-			if(!isset($assignedData)) {
-				if(is_scalar($localData) || $this->isArray($localData) || is_object($localData)) $assignedData = $localData;
+			// Each level represents a single condition, logically they are all connected with AND
+			foreach($stack as $level => $value) {
+				
+				// If an expression (level 0) is provided, use it as comparision string
+				if($level === 0) {
+					$compareTo = $value;
+					continue;
+				}
+				
+				// Mark the node for deletion if the assigned data does or does not meet the condition, depending on the speicifed mode
+				$data = $this->colony->findProperty($value, $globalData, $localData);
+				$conditionMet = isset($compareTo) ? $data == $compareTo : !empty($data);
+				if($conditionMet !== $this::$mode) return true;
 			}
 		}
-		
-		// If there is a valid assignment and expression given, return the evaluation result
-		if(isset($assignedData) && isset($currentValue) && $currentValue !== '') return $this->evaluate($currentValue, $assignedData);
-		
-		// Otherwise directly return the (appropriate) data as value. For better control of non-valued attributes like 'readonly', false is excluded and therefore removes the attribute
-		elseif(is_scalar($assignedData) && $assignedData !== false) return $assignedData;
 	}
-	
-	// Process the value of an attribute stack if there is at least one level specified (may be empty though)
-	public function processValue($stack, $defaultSelector, $globalData, $localData) {
-		
-		/** Process all (sorted) attribute stack levels in ascending order
-		 * The specific order of the statements below results in the desired process order:
-		 * - Use attribute level 0 (the expression) as value (specified by 'example')
-		 * - Try to substitute the expression
-		 * - Try to process the assignment from attribute level 1 (specified by ':example')
-		 * - Try to substitute the expression
-		 * - Try to process the assignment from attribute level 2 (specified by '::example')
-		 * - ... (as long as there are more levels)
-		 * - Try to substitute the expression
-		 */
-		foreach($stack as $level => $item) {
+
+	/**
+	 * Subclass of the ConditionHandler superclass that requires the condition to be met
+	 *
+	 * Example: <div :with="login" ::with="admin">Special rights granted</div>
+	 */
+	class WithHandler extends ConditionHandler {
+		static $attribute = 'with';
+		static $mode = true;
+	}
+
+	/**
+	 * Subclass of the ConditionHandler superclass that requires the condition not to be met
+	 *
+	 * Example: <div :without="login">Not logged in</div>
+	 */
+	class WithoutHandler extends ConditionHandler {
+		static $attribute = 'without';
+		static $mode = false;
+	}
+
+	/**
+	 * Process the value like for a regular attribute but set it as text instead
+	 *
+	 * Example: <div :text="age">I am %d years old</div>
+	 */
+	class TextHandler extends Handler {
+		static $attribute = 'text';
+		public function process($node, $stacks, $globalData, $localData, $stack) {
+			$value = $this->colony->processValue($stack, $this::$attribute, $globalData, $localData);
 			
-			// If an expression is provided, use it as value
-			if($level === 0) $value = $stack[0];
-			
-			// If a selector is provided, try to process the assignment
-			if($level > 0) $value = $this->processAssignment($value ?? NULL, $item, $defaultSelector, $globalData, $localData);
-			
-			// Try to substitute an expression
-			if(isset($value)) $value = $this->expressions[strtolower($value)] ?? $value;
+			// Converting HTML special chars is required because e.g. & would otherwise yield "unterminated entity reference"
+			if($node->childNodes->length === 0 || isset($stack[0])) $node->nodeValue = htmlspecialchars($value ?? '');
 		}
-		
-		// Return the actual attribute value
-		return $value;
 	}
-	
-	// Evaluate an expression with data or return NULL if the data is not applicable or intentionally set to false, which results in the removal of the attribute
-	public function evaluate($expression, $data) {
-		if(is_object($data)) return $data->format($expression); // Mostly DateTime
-		if(is_array($data)) return vsprintf($expression, $data); // Multiple placeholders
-		if(is_scalar($data) && $data !== false) return sprintf($expression, $data); // Single placeholder
+
+	/**
+	 * Process the value like for a regular attribute but set is as html instead
+	 *
+	 * Example: <div :html="article/text"></div>
+	 */
+	class HTMLHandler extends Handler {
+		static $attribute = 'html';
+		public function process($node, $stacks, $globalData, $localData, $stack) {
+			$value = $this->colony->processValue($stack, $this::$attribute, $globalData, $localData);
+			if($value == '') return;
+			$extraDOM = $this->colony->loadPartialHTML($value);
+			$this->colony->append($extraDOM, $node, $globalData, $localData);
+		}
 	}
-	
-	// Check whether the provided data is a non-associative array (has only numeric keys)
-	public function isArray($data) {
-		return is_array($data) && array_values($data) === $data;
+
+	/**
+	 * Process the value like for a regular attribute but use it as filename for a template to append
+	 *
+	 * Example: <div append="extra.html"></div>
+	 */
+	class AppendHandler extends Handler {
+		static $attribute = 'append';
+		public function process($node, $stacks, $globalData, $localData, $stack) {
+			$href = $this->colony->processValue($stack, $this::$attribute, $globalData, $localData);
+			$template = $this->colony->getTemplate($href);
+			if($template == '') return;
+			$extraDOM = $this->colony->loadPartialHTML($template);
+			$this->colony->append($extraDOM, $node, $globalData, $localData);
+		}
 	}
 }
